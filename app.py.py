@@ -1,55 +1,51 @@
 from flask import Flask, render_template, request, redirect
 import sqlite3
+import os
 
 app = Flask(__name__)
 
 def init_db():
     conn = sqlite3.connect('billing.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS items 
+    c.execute('''CREATE TABLE IF NOT EXISTS items
                  (id INTEGER PRIMARY KEY, name TEXT, price REAL, stock INTEGER)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS sales 
-                 (id INTEGER PRIMARY KEY, item_name TEXT, qty INTEGER, total REAL, date TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS sales
+                 (id INTEGER PRIMARY KEY, item_name TEXT, qty INTEGER, total REAL)''')
     c.execute("SELECT COUNT(*) FROM items")
     if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO items VALUES (1,'Samosa',15,100)")
-        c.execute("INSERT INTO items VALUES (2,'Chai',10,200)")
-        c.execute("INSERT INTO items VALUES (3,'Cold Drink',20,50)")
+        c.execute("INSERT INTO items VALUES (1, 'Samosa', 25, 100)")
+        c.execute("INSERT INTO items VALUES (2, 'Chai', 20, 200)")
+        c.execute("INSERT INTO items VALUES (3, 'Cold Drink', 30, 50)")
     conn.commit()
     conn.close()
 
+init_db()
+
 @app.route('/')
-def home():
+def index():
     conn = sqlite3.connect('billing.db')
     c = conn.cursor()
     c.execute("SELECT * FROM items")
     items = c.fetchall()
-    c.execute("SELECT SUM(total) FROM sales WHERE date=date('now')")
-    today_sale = c.fetchone()[0] or 0
     conn.close()
-    return render_template('index.html', items=items, today_sale=today_sale)
+    return render_template('index.html', items=items)
 
-@app.route('/bill', methods=['POST'])
-def make_bill():
+@app.route('/sell', methods=['POST'])
+def sell():
     item_id = request.form['item_id']
     qty = int(request.form['qty'])
-    
     conn = sqlite3.connect('billing.db')
     c = conn.cursor()
     c.execute("SELECT name, price, stock FROM items WHERE id=?", (item_id,))
-    name, price, stock = c.fetchone()
-    
-    if stock >= qty:
-        total = price * qty
-        c.execute("UPDATE items SET stock=stock-? WHERE id=?", (qty, item_id))
-        c.execute("INSERT INTO sales (item_name, qty, total, date) VALUES (?,?,?,date('now'))", (name, qty, total))
+    item = c.fetchone()
+    if item and item[2] >= qty:
+        total = item[1] * qty
+        c.execute("INSERT INTO sales (item_name, qty, total) VALUES (?,?,?)", (item[0], qty, total))
+        c.execute("UPDATE items SET stock = stock - ? WHERE id=?", (qty, item_id))
         conn.commit()
-        conn.close()
-        return render_template('bill.html', name=name, qty=qty, price=price, total=total)
-    else:
-        conn.close()
-        return "Stock khatam hai bhai!"
+    conn.close()
+    return redirect('/')
 
 if __name__ == '__main__':
-    init_db()
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
